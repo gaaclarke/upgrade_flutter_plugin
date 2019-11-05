@@ -214,7 +214,7 @@ def upgradeMainActivity(mainActivityPath, pluginInfo):
 def writeEmbeddingV1Activity(mainActivityPath, mainActivityInfo):
     splitPath = list(os.path.split(mainActivityPath))
     splitPath[-1] = "EmbeddingV1Activity.java"
-    v1ActivityPath = apply(os.path.join, splitPath)
+    v1ActivityPath = os.path.join(*splitPath)
     print("writing: " + v1ActivityPath)
     with open(v1ActivityPath, "w") as f:
         f.write(
@@ -250,6 +250,8 @@ def upgradeExampleAppBuildGradle(exampleAppBuildGradlePath):
     with open(exampleAppBuildGradlePath) as f:
         text = f.read()
 
+    text = text.replace("android.support.test.runner.AndroidJUnitRunner",
+                        "androidx.test.runner.AndroidJUnitRunner")
     dependenciesMatch = re.search(r"dependencies.*\{", text, re.MULTILINE)
     if dependenciesMatch:
         text = text[:dependenciesMatch.end()] + g_exampleAppDependencies + text[dependenciesMatch.end():]
@@ -260,15 +262,17 @@ def upgradeExampleAppBuildGradle(exampleAppBuildGradlePath):
         f.write(text)
 
 def writeTestFiles(testPath, mainActivityInfo, pluginInfo):
-    if not os.path.exists(testPath):
-        os.makedirs(testPath)
-    with open(os.path.join(testPath, "MainActivityTest.java"), "w") as f:
+    package = pluginInfo["package"]
+    fullPath = os.path.join(*([testPath] + package.split(".")))
+    if not os.path.exists(fullPath):
+        os.makedirs(fullPath)
+    with open(os.path.join(fullPath, "MainActivityTest.java"), "w") as f:
         f.write(g_mainActivityTest.replace(
-            "TEMPLATE_PACKAGE", pluginInfo["package"]).replace(
+            "TEMPLATE_PACKAGE", package).replace(
                 "TEMPLATE_MAIN_ACTIVITY_PACKAGE", mainActivityInfo["package"]))
-    with open(os.path.join(testPath, "EmbeddingV1ActivityTest.java"), "w") as f:
+    with open(os.path.join(fullPath, "EmbeddingV1ActivityTest.java"), "w") as f:
         f.write(g_embeddingV1ActivityTest.replace(
-            "TEMPLATE_PACKAGE", pluginInfo["package"]).replace(
+            "TEMPLATE_PACKAGE", package).replace(
                 "TEMPLATE_MAIN_ACTIVITY_PACKAGE", mainActivityInfo["package"]))
 
 def addDevDependencies(pubspecPath):
@@ -323,6 +327,23 @@ def updateMinFlutterVersion(pubspecPath):
 def writeDartTest(path):
     with open(path, "w") as f:
         f.write(g_dartTestStub)
+
+def addE2EPlugin(mainActivityPath):
+    text = ""
+    with open(mainActivityPath) as f:
+        text = f.read()
+
+    importMatch = re.search("import .*", text)
+    text = strInsert(text, importMatch.start(),
+                     "import dev.flutter.plugins.e2e.E2EPlugin;\n")
+    addPluginMatch = re.search(
+        r"(\s*)flutterEngine\.getPlugins\(\)\.add\(.*", text)
+    text = strInsert(text,
+                     addPluginMatch.start(),
+                     addPluginMatch.group(1) + "flutterEngine.getPlugins().add(new E2EPlugin());")
+
+    with open(mainActivityPath, "w") as f:
+        f.write(text)
 
 def main():
     if len(sys.argv) != 2:
@@ -402,10 +423,16 @@ def main():
     ###################
     # Step 12
     ###################
-    updateMinFlutterVersion(pubspecPath)
+    print("upgrading: " + mainActivityPath)
+    addE2EPlugin(mainActivityPath)
 
     ###################
     # Step 13
+    ###################
+    updateMinFlutterVersion(pubspecPath)
+
+    ###################
+    # Step 14
     ###################
     dirName = os.path.basename(os.path.abspath(pluginDirPath))
     dartTestPath = os.path.join(pluginDirPath, "test", "%s_e2e.dart" % dirName)
