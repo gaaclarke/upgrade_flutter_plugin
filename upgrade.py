@@ -129,9 +129,10 @@ public class EmbeddingV1ActivityTest {
 }
 """
 
-g_minFlutterVersion = """environment:
-  sdk: ">=2.0.0-dev.28.0 <3.0.0"
-  flutter: ">=1.9.1+hotfix.5 <2.0.0\""""
+g_minFlutterVersion = [
+  '  sdk: ">=2.0.0-dev.28.0 <3.0.0"',
+  '  flutter: ">=1.9.1+hotfix.5 <2.0.0"'
+]
 
 g_dartTestStub = """
 import 'package:flutter_test/flutter_test.dart';
@@ -152,9 +153,12 @@ def findFile(path, findFileFilter):
             if findFileFilter(root, name):
                 return os.path.join(root, name)
 
-
 def strInsert(aString, insertLoc, insertValue):
     return aString[:insertLoc] + insertValue + aString[insertLoc:]
+
+def insertItems(lst, items):
+    for item in items:
+        lst.append(item)
 
 def upgradePluginJava(pluginPath):
     text = ""
@@ -294,13 +298,27 @@ def updateMinFlutterVersion(pubspecPath):
     with open(pubspecPath) as f:
         text = f.read()
 
-    environmentMatch = re.search(r"environment:\n\s*sdk:.*\n\s*flutter:.*", text, re.MULTILINE)
-    if not environmentMatch:
-        environmentMatch = re.search(r"environment:\n\s*flutter:.*\n\s*sdk:.*", text, re.MULTILINE)
-    text = text[:environmentMatch.start()] + g_minFlutterVersion + text[environmentMatch.end():]
+    newLines = []
+    inEnvironment = False
+    for line in text.split("\n"):
+        if line.rstrip() == "environment:":
+            inEnvironment = True
+            newLines.append(line)
+        elif inEnvironment:
+            if line == "" or not line[0].isspace():
+                inEnvironment = False
+                insertItems(newLines, g_minFlutterVersion)
+                newLines.append(line)
+            else:
+                pass # Intentionally skip line.
+        else:
+            newLines.append(line)
+
+    if inEnvironment:
+        insertItems(newLines, g_minFlutterVersion)
 
     with open(pubspecPath, "w") as f:
-        text = f.write(text)
+        text = f.write("\n".join(newLines))
 
 def writeDartTest(path):
     with open(path, "w") as f:
